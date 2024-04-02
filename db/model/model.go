@@ -80,13 +80,20 @@ type EmployeesInput []EmployeeInput
 
 // MonthltSchedule wraps a list of ScheduleEntry items for a single employee.
 type MonthlySchedule struct {
-	Date      string     `json:"date"`
-	DayName   string     `json:"dayName"`
-	TimeSlots []TimeSlot `json:"timeSlots"`
+	Date        string     `json:"date"`
+	DayName     string     `json:"dayName"`
+	HolidayName string     `json:"holiday_name"`
+	TimeSlots   []TimeSlot `json:"timeSlots"`
 }
 
 // TimeSlot represents a single working period within a day.
 type TimeSlot struct {
 	Start string `json:"start"`
 	End   string `json:"end"`
+}
+
+// Holiday represents a holiday record in the french_holidays table
+type Holiday struct {
+	HolidayDate time.Time `gorm:"primary_key" json:"holiday_date"`
+	HolidayName string    `json:"holiday_name"`
 }

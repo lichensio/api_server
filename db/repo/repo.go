@@ -6,6 +6,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"time"
 )
 
 type Repository interface {
@@ -20,6 +21,11 @@ type Repository interface {
 	GetEmployeeWithSchedules(id uint) (*model.Employee, error)
 	DBCreate() error
 	DBDelete() error
+	HolidayCreate(holiday *model.Holiday) error
+	HolidayFindByDate(date time.Time) (*model.Holiday, error)
+	HolidayUpdate(holiday *model.Holiday) error
+	HolidayListAll() ([]model.Holiday, error)
+	HolidayFindByMonthAndYear(year int, month time.Month) ([]model.Holiday, error)
 	// Define more methods for analytics or other operations as needed
 }
 
@@ -83,8 +89,10 @@ func (r *repository) GetEmployeeWithSchedules(employeeID uint) (*model.Employee,
 	return &employee, nil
 }
 
+// Create DB
+
 func (r *repository) DBCreate() error {
-	if err := r.db.AutoMigrate(&model.Employee{}, &model.Schedule{}); err != nil {
+	if err := r.db.AutoMigrate(&model.Employee{}, &model.Schedule{}, &model.Holiday{}); err != nil {
 		log.Printf("Failed to migrate database schema: %v", err)
 		return err
 	}
@@ -92,9 +100,8 @@ func (r *repository) DBCreate() error {
 	return nil
 }
 
-// Additional methods for analytics or other operations can be defined here
+// CleanupDatabase deletes all entries from the schedules and then the employees tables, holidays table.
 
-// cleanupDatabase deletes all entries from the schedules and then the employees tables.
 func (r *repository) CleanupDatabase() {
 	// First, delete all entries from the schedules table.
 	if err := r.db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.Schedule{}).Error; err != nil {
@@ -104,6 +111,10 @@ func (r *repository) CleanupDatabase() {
 	// Then, delete all entries from the employees table.
 	if err := r.db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.Employee{}).Error; err != nil {
 		log.Fatalf("Failed to clean up employees table: %v", err)
+	}
+	// Then, delete all entries from the holidays table.
+	if err := r.db.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.Holiday{}).Error; err != nil {
+		log.Fatalf("Failed to clean up holidays table: %v", err)
 	}
 }
 
@@ -132,5 +143,52 @@ func (r *repository) DBDelete() error {
 	if err := r.db.Migrator().DropTable(&model.Employee{}); err != nil {
 		return err
 	}
+	if err := r.db.Migrator().DropTable(&model.Holiday{}); err != nil {
+		return err
+	}
 	return nil
+}
+
+// Operation on holidays table
+
+// FindByDate retrieves a holiday by its date
+func (repo *repository) HolidayFindByDate(date time.Time) (*model.Holiday, error) {
+	var holiday model.Holiday
+	result := repo.db.First(&holiday, "holiday_date = ?", date)
+	return &holiday, result.Error
+}
+
+// Create inserts a new holiday into the database
+func (repo *repository) HolidayCreate(holiday *model.Holiday) error {
+	result := repo.db.Create(holiday)
+	return result.Error
+}
+
+// Update updates an existing holiday record
+func (repo *repository) HolidayUpdate(holiday *model.Holiday) error {
+	result := repo.db.Save(holiday)
+	return result.Error
+}
+
+// Delete removes a holiday record from the database
+func (repo *repository) HolidayDelete(date time.Time) error {
+	result := repo.db.Delete(&model.Holiday{}, "holiday_date = ?", date)
+	return result.Error
+}
+
+// ListAll retrieves all holiday records from the database
+func (repo *repository) HolidayListAll() ([]model.Holiday, error) {
+	var holidays []model.Holiday
+	result := repo.db.Find(&holidays)
+	return holidays, result.Error
+}
+
+func (repo *repository) HolidayFindByMonthAndYear(year int, month time.Month) ([]model.Holiday, error) {
+	var holidays []model.Holiday
+	startOfMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
+	endOfMonth := startOfMonth.AddDate(0, 1, -1) // Last day of the month
+
+	// Query to find holidays within the given month and year
+	result := repo.db.Where("holiday_date BETWEEN ? AND ?", startOfMonth, endOfMonth).Find(&holidays)
+	return holidays, result.Error
 }

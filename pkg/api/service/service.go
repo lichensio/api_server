@@ -1,10 +1,14 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/lichensio/api_server/db/model"
 	repo "github.com/lichensio/api_server/db/repo"
 	util "github.com/lichensio/api_server/internal/utils"
+	log "github.com/sirupsen/logrus"
+	"io/ioutil"
+	"net/http"
 	"time"
 )
 
@@ -86,7 +90,6 @@ func (s *EmployeeService) loadWeeklySchedules(employeeID uint, weekType string, 
 
 	return nil
 }
-
 func (s *EmployeeService) FetchEmployeeSchedule(employeeID uint, month string, year int) ([]model.MonthlySchedule, error) {
 	monthNum := util.MonthStringToNumber(month)
 
@@ -94,25 +97,35 @@ func (s *EmployeeService) FetchEmployeeSchedule(employeeID uint, month string, y
 		return nil, fmt.Errorf("invalid month: %s", month)
 	}
 
+	// Fetch holidays for the month and year
+	holidays, err := s.GetHolidaysForMonthYear(year, time.Month(monthNum))
+	if err != nil {
+		// Decide how to handle errors: log, return an error, or proceed without holidays
+		log.Printf("Could not fetch holidays for %d-%02d: %v", year, monthNum, err)
+		// Optional: return nil, err
+	}
+
+	// Convert holidays into a map for easy lookup
+	holidayMap := make(map[string]string)
+	for _, holiday := range holidays {
+		holidayMap[holiday.HolidayDate.Format("2006-01-02")] = holiday.HolidayName
+	}
+
 	employee, err := s.repo.GetEmployeeWithSchedules(employeeID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get start date for employee ID %d: %v", employeeID, err)
 	}
-	// fmt.Println(employee)
 
 	firstDayOfMonth := time.Date(year, time.Month(monthNum), 1, 0, 0, 0, 0, time.UTC)
 	lastDayOfMonth := firstDayOfMonth.AddDate(0, 1, -1)
 
 	entries := make([]model.MonthlySchedule, 0)
 	for d := firstDayOfMonth; !d.After(lastDayOfMonth); d = d.AddDate(0, 0, 1) {
+		dateStr := d.Format("2006-01-02")
 		weekType := util.WeekTypeForDate(employee.StartDate, d)
-		// fmt.Println(weekType)
 		var timeSlots []model.TimeSlot
 		for _, sched := range employee.Schedules {
-			// fmt.Println(sched.WeekType, weekType)
-			// fmt.Println(sched.DayName, d.Weekday().String())
 			if sched.WeekType == weekType && sched.DayName == d.Weekday().String() {
-
 				formattedStartTime := sched.StartTime.Format("15:04")
 				formattedEndTime := sched.EndTime.Format("15:04")
 
@@ -120,14 +133,19 @@ func (s *EmployeeService) FetchEmployeeSchedule(employeeID uint, month string, y
 					Start: formattedStartTime,
 					End:   formattedEndTime,
 				})
-				// fmt.Println(timeSlots)
 			}
 		}
 
+		holidayName := ""
+		if name, ok := holidayMap[dateStr]; ok {
+			holidayName = name
+		}
+
 		entries = append(entries, model.MonthlySchedule{
-			Date:      d.Format("2006-01-02"),
-			DayName:   d.Weekday().String(),
-			TimeSlots: timeSlots,
+			Date:        dateStr,
+			DayName:     d.Weekday().String(),
+			HolidayName: holidayName,
+			TimeSlots:   timeSlots,
 		})
 	}
 
@@ -201,4 +219,62 @@ func findDayIndex(dayName string, daysOrder []string) int {
 		}
 	}
 	return -1
+}
+
+// GetHolidaysForMonthYear tries to get holidays from the DB, fetches from the API if not found, and stores them
+func (hs *EmployeeService) GetHolidaysForMonthYear(year int, month time.Month) ([]model.Holiday, error) {
+	holidays, err := hs.repo.HolidayFindByMonthAndYear(year, month)
+	if err != nil {
+		return nil, err
+	}
+
+	// If holidays are not found in the database for the given month/year, fetch from API
+	if len(holidays) == 0 {
+		allHolidays, err := FetchHolidaysFromAPI(year)
+		if err != nil {
+			return nil, err
+		}
+
+		for dateStr, name := range allHolidays {
+			date, err := time.Parse("2006-01-02", dateStr)
+			if err != nil {
+				continue // skip if the date format is incorrect
+			}
+
+			// If the month matches the requested month, add to the database
+			if date.Year() == year && date.Month() == month {
+				holiday := model.Holiday{HolidayDate: date, HolidayName: name}
+				err := hs.repo.HolidayCreate(&holiday)
+				if err != nil {
+					return nil, err
+				}
+				holidays = append(holidays, holiday)
+			}
+		}
+	}
+
+	return holidays, nil
+}
+
+// FetchHolidaysFromAPI fetches holidays for a given year from the API
+func FetchHolidaysFromAPI(year int) (map[string]string, error) {
+	url := fmt.Sprintf("https://calendrier.api.gouv.fr/jours-feries/metropole/%d.json", year)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var holidays map[string]string
+	err = json.Unmarshal(body, &holidays)
+	if err != nil {
+		return nil, err
+	}
+
+	return holidays, nil
 }
