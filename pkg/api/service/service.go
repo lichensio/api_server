@@ -152,6 +152,20 @@ func (s *EmployeeService) FetchEmployeeSchedule(employeeID uint, month string, y
 	return entries, nil
 }
 
+func (s *EmployeeService) CalculateMonthlyHours(entries []model.MonthlySchedule) (float64, error) {
+	var totalHours float64
+	for _, entry := range entries {
+		for _, slot := range entry.TimeSlots {
+			hours, err := util.CalculateHours(slot.Start, slot.End)
+			if err != nil {
+				return 0, err // Handle the error appropriately
+			}
+			totalHours += hours
+		}
+	}
+	return totalHours, nil
+}
+
 func (s *EmployeeService) DBCreate() error {
 	return s.repo.DBCreate()
 }

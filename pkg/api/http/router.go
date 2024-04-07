@@ -11,13 +11,14 @@ func NewRouter(svc *Service) *chi.Mux {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.StripSlashes)
 
-	r.Route("/api", func(r chi.Router) {
+	r.Route("/prox/api", func(r chi.Router) {
 		r.Post("/loadEmployees", svc.LoadEmployeesHandler)
 		r.Get("/db/create", svc.DBCreateHandler)
 		r.Delete("/db/delete", svc.DBDeleteHandler)
-		r.Get("/getMonthlySchedule", svc.GetMonthlyScheduleHandler)
+		r.Get("/getMonthlySchedule", svc.GetMonthlySchedule2Handler)
 		r.Get("/getEmployees", svc.GetEmployeesHandler)
 		r.Get("/getWeeksAB/{ID}", svc.GetWeeksABHandler)
+		r.Get("/getMonthlyHours", svc.GetMonthlyHours2Handler)
 		// r.Put("/updateEmployees", svc.UpdateEmployees)
 		// r.Put("/updateSchedule", svc.UpdateSchedule)
 		// r.Get("/getSchedule/{employeeID}", svc.GetSchedule)

@@ -162,4 +162,26 @@ func compareTimeSlots(a, b []model.TimeSlot) bool {
 	return true
 }
 
+func CalculateHours(start, end string) (float64, error) {
+	layout := "15:04"
+	startTime, err := time.Parse(layout, start)
+	if err != nil {
+		return 0, err
+	}
+
+	endTime, err := time.Parse(layout, end)
+	if err != nil {
+		return 0, err
+	}
+
+	if endTime.Before(startTime) {
+		// This handles cases where the end time is past midnight, indicating the next day.
+		// Adjust endTime by adding 24 hours to it.
+		endTime = endTime.Add(24 * time.Hour)
+	}
+
+	duration := endTime.Sub(startTime)
+	return duration.Hours(), nil
+}
+
 // Other utility functions...

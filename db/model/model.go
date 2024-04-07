@@ -97,3 +97,11 @@ type Holiday struct {
 	HolidayDate time.Time `gorm:"primary_key" json:"holiday_date"`
 	HolidayName string    `json:"holiday_name"`
 }
+
+type EmployeeHoliday struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	EmployeeID  uint      `gorm:"not null;index" json:"employeeId"`
+	HolidayDate time.Time `gorm:"type:date;not null" json:"holidayDate"`
+	Description string    `gorm:"type:varchar(255)" json:"description"`     // Optional description of the holiday
+	WithoutPay  bool      `gorm:"not null;default:false" json:"withoutPay"` // Indicates if the holiday is without pay
+}
